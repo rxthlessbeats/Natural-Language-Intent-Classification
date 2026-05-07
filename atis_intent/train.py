@@ -16,11 +16,12 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS, TfidfVectorizer
 from sklearn.metrics import accuracy_score, f1_score
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, Dataset
+from tqdm.auto import tqdm
 
 from atis_intent.config import Settings, load_experiment_config, resolve_data_path
 from atis_intent.data import prepare_frames
@@ -194,14 +195,17 @@ def train_dense(
     val_loader = make_tensor_loader(X_val, y_val, batch_size, shuffle=False)
 
     best_val_f1, best_state, no_improve = -1.0, None, 0
+    best_epoch = 0
+    best_train_acc = best_train_mf1 = best_val_acc = best_val_mf1 = 0.0
     history: list[dict] = []
     t0 = time.time()
 
-    for epoch in range(1, epochs + 1):
+    epoch_bar = tqdm(range(1, epochs + 1), desc=f"[{name}]", unit="epoch")
+    for epoch in epoch_bar:
         model.train()
         tr_loss = 0.0
         tr_preds, tr_true = [], []
-        for Xb, yb in tr_loader:
+        for Xb, yb in tqdm(tr_loader, desc="  train batches", leave=False, unit="batch"):
             Xb, yb = Xb.to(device), yb.to(device)
             optimiser.zero_grad()
             logits = model(Xb)
@@ -221,7 +225,7 @@ def train_dense(
         val_loss = 0.0
         val_preds, val_true = [], []
         with torch.no_grad():
-            for Xb, yb in val_loader:
+            for Xb, yb in tqdm(val_loader, desc="  val batches", leave=False, unit="batch"):
                 Xb_d, yb_d = Xb.to(device), yb.to(device)
                 logits = model(Xb_d)
                 val_loss += criterion(logits, yb_d).item() * len(yb)
@@ -249,23 +253,30 @@ def train_dense(
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+            best_train_acc, best_train_mf1 = tr_acc, tr_f1
+            best_val_acc, best_val_mf1 = val_acc, val_f1
             no_improve = 0
         else:
             no_improve += 1
-            if no_improve >= patience:
-                break
 
-        if epoch % 5 == 0 or epoch == 1:
-            print(
-                f"  [{name}] ep {epoch:3d}  loss={tr_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
-            )
+        epoch_bar.set_postfix(
+            tr_loss=f"{tr_loss:.4f}",
+            val_loss=f"{val_loss:.4f}",
+            v_f1=f"{val_f1:.3f}",
+            best=f"{best_val_f1:.3f}",
+        )
+
+        if no_improve >= patience:
+            break
 
     assert best_state is not None
     model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
     model.eval()
     te_preds = []
+    te_loader_final = make_tensor_loader(X_te, y_te, batch_size, shuffle=False)
     with torch.no_grad():
-        for Xb, _ in make_tensor_loader(X_te, y_te, batch_size, shuffle=False):
+        for Xb, _ in tqdm(te_loader_final, desc=f"[{name}] test", unit="batch"):
             te_preds.append(model(Xb.to(device)).argmax(1).cpu())
     te_preds_t = torch.cat(te_preds).numpy()
     te_true_t = y_te.numpy()
@@ -273,8 +284,17 @@ def train_dense(
     te_mf1 = f1_score(te_true_t, te_preds_t, average="macro", zero_division=0)
     te_wf1 = f1_score(te_true_t, te_preds_t, average="weighted", zero_division=0)
     elapsed = time.time() - t0
+    print(f"\n  [{name}]  — summary —")
     print(
-        f"\n  [{name}]  test_acc={te_acc:.4f}  macro_f1={te_mf1:.4f}  weighted_f1={te_wf1:.4f}  time={elapsed:.1f}s"
+        f"    Best checkpoint: epoch {best_epoch}  (selection metric: val macro-F1 = {best_val_mf1:.4f})"
+    )
+    print(
+        f"    At best epoch — train acc={best_train_acc:.4f}  train macro-F1={best_train_mf1:.4f}  |  "
+        f"val acc={best_val_acc:.4f}  val macro-F1={best_val_mf1:.4f}"
+    )
+    print(
+        f"    Test (loaded best weights) — acc={te_acc:.4f}  macro-F1={te_mf1:.4f}  "
+        f"weighted-F1={te_wf1:.4f}  time={elapsed:.1f}s"
     )
     return model, history, te_acc, te_mf1, te_wf1, te_preds_t
 
@@ -303,14 +323,19 @@ def train_seq(
     )
 
     best_val_f1, best_state, no_improve = -1.0, None, 0
+    best_epoch = 0
+    best_train_acc = best_train_mf1 = best_val_acc = best_val_mf1 = 0.0
     history: list[dict] = []
     t0 = time.time()
 
-    for epoch in range(1, epochs + 1):
+    epoch_bar = tqdm(range(1, epochs + 1), desc=f"[{name}]", unit="epoch")
+    for epoch in epoch_bar:
         model.train()
         tr_loss = 0.0
         tr_preds, tr_true = [], []
-        for ids, lengths, labels in tr_loader:
+        for ids, lengths, labels in tqdm(
+            tr_loader, desc="  train batches", leave=False, unit="batch"
+        ):
             ids, lengths, labels = ids.to(device), lengths.to(device), labels.to(device)
             optimiser.zero_grad()
             logits = model(ids, lengths)
@@ -330,7 +355,9 @@ def train_seq(
         val_loss = 0.0
         val_preds, val_true = [], []
         with torch.no_grad():
-            for ids, lengths, labels in val_loader:
+            for ids, lengths, labels in tqdm(
+                val_loader, desc="  val batches", leave=False, unit="batch"
+            ):
                 ids_d, lens_d, labels_d = ids.to(device), lengths.to(device), labels.to(device)
                 logits = model(ids_d, lens_d)
                 val_loss += criterion(logits, labels_d).item() * len(labels)
@@ -358,23 +385,29 @@ def train_seq(
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            best_epoch = epoch
+            best_train_acc, best_train_mf1 = tr_acc, tr_f1
+            best_val_acc, best_val_mf1 = val_acc, val_f1
             no_improve = 0
         else:
             no_improve += 1
-            if no_improve >= patience:
-                break
 
-        if epoch % 5 == 0 or epoch == 1:
-            print(
-                f"  [{name}] ep {epoch:3d}  loss={tr_loss:.4f}  val_acc={val_acc:.4f}  val_f1={val_f1:.4f}"
-            )
+        epoch_bar.set_postfix(
+            tr_loss=f"{tr_loss:.4f}",
+            val_loss=f"{val_loss:.4f}",
+            v_f1=f"{val_f1:.3f}",
+            best=f"{best_val_f1:.3f}",
+        )
+
+        if no_improve >= patience:
+            break
 
     assert best_state is not None
     model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
     model.eval()
     te_preds, te_true_acc = [], []
     with torch.no_grad():
-        for ids, lengths, labels in te_loader:
+        for ids, lengths, labels in tqdm(te_loader, desc=f"[{name}] test", unit="batch"):
             te_preds.append(model(ids.to(device), lengths.to(device)).argmax(1).cpu())
             te_true_acc.append(labels)
     te_preds_t = torch.cat(te_preds).numpy()
@@ -383,8 +416,17 @@ def train_seq(
     te_mf1 = f1_score(te_true_t, te_preds_t, average="macro", zero_division=0)
     te_wf1 = f1_score(te_true_t, te_preds_t, average="weighted", zero_division=0)
     elapsed = time.time() - t0
+    print(f"\n  [{name}]  — summary —")
     print(
-        f"\n  [{name}]  test_acc={te_acc:.4f}  macro_f1={te_mf1:.4f}  weighted_f1={te_wf1:.4f}  time={elapsed:.1f}s"
+        f"    Best checkpoint: epoch {best_epoch}  (selection metric: val macro-F1 = {best_val_mf1:.4f})"
+    )
+    print(
+        f"    At best epoch — train acc={best_train_acc:.4f}  train macro-F1={best_train_mf1:.4f}  |  "
+        f"val acc={best_val_acc:.4f}  val macro-F1={best_val_mf1:.4f}"
+    )
+    print(
+        f"    Test (loaded best weights) — acc={te_acc:.4f}  macro-F1={te_mf1:.4f}  "
+        f"weighted-F1={te_wf1:.4f}  time={elapsed:.1f}s"
     )
     return model, history, te_acc, te_mf1, te_wf1, te_preds_t
 
@@ -420,6 +462,8 @@ def main(argv: list[str] | None = None) -> None:
         pp.intent_filter_shared_only,
         pp.val_fraction,
         pp.split_seed,
+        random_deletion=pp.random_deletion,
+        random_deletion_p=pp.random_deletion_p,
     )
     if pp.strip_whitespace:
         for _df in (train_df_tr, val_df, test_df):
@@ -447,17 +491,29 @@ def main(argv: list[str] | None = None) -> None:
     }
 
     if recipe == "tfidf_lr":
+        stop_words = None
+        if pp.remove_stopwords:
+            reserve = {s.lower() for s in pp.stopword_reserve}
+            stop_words = sorted(frozenset(ENGLISH_STOP_WORDS) - reserve)
         if pp.tfidf_use_masking:
+            # NOTE: Do not pass a callable analyzer into sklearn if we want to pickle the vectorizer.
+            # Instead, precompute a whitespace-delimited masked text and use the normal word analyzer.
+            def _masked_text(s: str) -> str:
+                return " ".join(entities.simple_tokenize(s, apply_mask=True))
 
-            def _analyze(s: str) -> list[str]:
-                return entities.simple_tokenize(s, apply_mask=True)
+            tr_text = train_df_tr["text"].map(_masked_text)
+            va_text = val_df["text"].map(_masked_text)
+            te_text = test_df["text"].map(_masked_text)
 
-            # Custom `analyzer`: do not pass `strip_accents` (sklearn ignores or warns).
             tfidf = TfidfVectorizer(
-                analyzer=_analyze,
+                analyzer="word",
                 ngram_range=(pp.tfidf_ngram_min, pp.tfidf_ngram_max),
                 max_features=pp.tfidf_max_features,
                 sublinear_tf=pp.tfidf_sublinear_tf,
+                strip_accents=pp.tfidf_strip_accents,
+                token_pattern=r"(?u)\[[a-z_]+\]|\b\w+\b",
+                stop_words=stop_words,
+                lowercase=False,
             )
         else:
             tfidf = TfidfVectorizer(
@@ -467,12 +523,19 @@ def main(argv: list[str] | None = None) -> None:
                 sublinear_tf=pp.tfidf_sublinear_tf,
                 strip_accents=pp.tfidf_strip_accents,
                 token_pattern=r"(?u)\b\w+\b",
+                stop_words=stop_words,
                 lowercase=pp.lowercase,
             )
-        tfidf.fit(train_df_tr["text"])
-        X_tr = torch.tensor(tfidf.transform(train_df_tr["text"]).toarray(), dtype=torch.float32)
-        X_val = torch.tensor(tfidf.transform(val_df["text"]).toarray(), dtype=torch.float32)
-        X_te = torch.tensor(tfidf.transform(test_df["text"]).toarray(), dtype=torch.float32)
+        if pp.tfidf_use_masking:
+            tfidf.fit(tr_text)
+            X_tr = torch.tensor(tfidf.transform(tr_text).toarray(), dtype=torch.float32)
+            X_val = torch.tensor(tfidf.transform(va_text).toarray(), dtype=torch.float32)
+            X_te = torch.tensor(tfidf.transform(te_text).toarray(), dtype=torch.float32)
+        else:
+            tfidf.fit(train_df_tr["text"])
+            X_tr = torch.tensor(tfidf.transform(train_df_tr["text"]).toarray(), dtype=torch.float32)
+            X_val = torch.tensor(tfidf.transform(val_df["text"]).toarray(), dtype=torch.float32)
+            X_te = torch.tensor(tfidf.transform(test_df["text"]).toarray(), dtype=torch.float32)
         y_tr = torch.tensor(train_df_tr["label"].values, dtype=torch.long)
         y_val = torch.tensor(val_df["label"].values, dtype=torch.long)
         y_te = torch.tensor(test_df["label"].values, dtype=torch.long)
@@ -509,10 +572,14 @@ def main(argv: list[str] | None = None) -> None:
     else:
         tok_type = "char" if recipe == "charcnn" else pp.tokenizer
         use_mask = pp.textcnn_use_masking and tok_type in ("word", "bpe")
+        cnn_stopwords: set[str] | None = None
+        if pp.remove_stopwords and tok_type in ("word", "bpe"):
+            reserve = {s.lower() for s in pp.stopword_reserve}
+            cnn_stopwords = set(frozenset(ENGLISH_STOP_WORDS) - reserve)
 
         tokenizer: WordTokenizer | CharTokenizer | SentencePieceTokenizer
         if tok_type == "word":
-            tokenizer = WordTokenizer(entities, mask=use_mask)
+            tokenizer = WordTokenizer(entities, mask=use_mask, stopwords=cnn_stopwords)
         elif tok_type == "char":
             tokenizer = CharTokenizer()
         else:
@@ -520,7 +587,9 @@ def main(argv: list[str] | None = None) -> None:
             spm_path = (
                 settings.sentencepiece_dir / f"atis_bpe_{mask_tag}_v{pp.bpe_vocab_size}.model"
             ).resolve()
-            tokenizer = SentencePieceTokenizer(spm_path, entities, mask=use_mask)
+            tokenizer = SentencePieceTokenizer(
+                spm_path, entities, mask=use_mask, stopwords=cnn_stopwords
+            )
             if not spm_path.is_file():
                 print(f"Training SentencePiece → {spm_path.name} …")
                 tokenizer.train(

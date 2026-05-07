@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 import numpy as np
@@ -54,12 +55,27 @@ def stratified_val_split(
     return tr, va
 
 
+def augment_random_deletion(text: str, p: float, rng: random.Random) -> str:
+    """Whitespace token-level random dropout; preserves non-empty utterance."""
+    if p <= 0 or not text or not text.strip():
+        return text
+    toks = text.split()
+    if not toks:
+        return text
+    kept = [t for t in toks if rng.random() >= p]
+    if not kept:
+        return text
+    return " ".join(kept)
+
+
 def prepare_frames(
     train_path: Path,
     test_path: Path,
     intent_filter_shared_only: bool,
     val_fraction: float,
     split_seed: int,
+    random_deletion: bool = False,
+    random_deletion_p: float = 0.14,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, LabelEncoder, int]:
     train_df = load_rasa_json(train_path)
     test_df = load_rasa_json(test_path)
@@ -71,5 +87,17 @@ def prepare_frames(
     train_df["label"] = le.transform(train_df["intent"])
     test_df["label"] = le.transform(test_df["intent"])
     train_df_tr, val_df = stratified_val_split(train_df, val_frac=val_fraction, seed=split_seed)
+    if random_deletion and random_deletion_p > 0:
+        n_prev = len(train_df_tr)
+        rng = random.Random(split_seed + 917)
+        aug_rows = train_df_tr.copy()
+        aug_rows["text"] = aug_rows["text"].map(
+            lambda s: augment_random_deletion(s, random_deletion_p, rng)
+        )
+        train_df_tr = pd.concat([train_df_tr, aug_rows], ignore_index=True)
+        print(
+            f"[Aug] random deletion p={random_deletion_p} → "
+            f"train rows {n_prev:,} → {len(train_df_tr):,}"
+        )
     num_classes = len(le.classes_)
     return train_df_tr, val_df, test_df, le, num_classes

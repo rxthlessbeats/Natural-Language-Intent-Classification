@@ -65,11 +65,37 @@ class PreprocessConfig(BaseModel):
     tfidf_ngram_max: int = Field(2, ge=1)
     tfidf_sublinear_tf: bool = True
     tfidf_strip_accents: str | None = "unicode"
+    # Shared stop-word removal settings for both TF-IDF and CNN tokenization.
+    remove_stopwords: bool = False
+    stopword_reserve: list[str] = Field(
+        default_factory=lambda: [
+            "from",
+            "to",
+            "on",
+            "in",
+            "at",
+            "between",
+            "and",
+            "or",
+            "via",
+            "than",
+            "my",
+            "would",
+            "like",
+            "need",
+            "show",
+            "list",
+            "give",
+        ]
+    )
     embedding_type: EmbeddingType = "glove"
     glove_name: str = "6B"
     glove_dim: int = Field(100, ge=1)
     freeze_pretrained: bool = False
     embed_dim_learned: int = Field(128, ge=1)
+    # After stratified train/val split: duplicate train rows with token-dropout aug (notebook §1.6).
+    random_deletion: bool = False
+    random_deletion_p: float = Field(0.14, ge=0, lt=0.15)
 
 
 class TrainConfig(BaseModel):

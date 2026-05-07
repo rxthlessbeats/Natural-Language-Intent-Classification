@@ -10,12 +10,16 @@ from atis_intent.entities import EntityResources
 
 
 class WordTokenizer:
-    def __init__(self, entities: EntityResources, mask: bool):
+    def __init__(self, entities: EntityResources, mask: bool, stopwords: set[str] | None = None):
         self._e = entities
         self.mask = mask
+        self.stopwords = stopwords
 
     def tokenize(self, text: str) -> list[str]:
-        return self._e.word_full_tokenize(text, apply_mask=self.mask)
+        toks = self._e.word_full_tokenize(text, apply_mask=self.mask)
+        if not self.stopwords:
+            return toks
+        return [t for t in toks if t not in self.stopwords]
 
 
 class CharTokenizer:
@@ -29,10 +33,12 @@ class SentencePieceTokenizer:
         model_path: Path,
         entities: EntityResources,
         mask: bool,
+        stopwords: set[str] | None = None,
     ):
         self.model_path = model_path
         self._e = entities
         self.mask = mask
+        self.stopwords = stopwords
         self._sp: spm.SentencePieceProcessor | None = None
 
     def train(
@@ -47,7 +53,7 @@ class SentencePieceTokenizer:
         from atis_intent.entities import SENTENCEPIECE_USER_DEFINED_SYMBOLS
 
         self.model_path.parent.mkdir(parents=True, exist_ok=True)
-        processed = [self._e.preprocess_for_sentencepiece(s, self.mask) for s in corpus]
+        processed = [self._preprocess(s) for s in corpus]
         corpus_file = self.model_path.with_suffix(".txt")
         corpus_file.write_text("\n".join(processed), encoding="utf-8")
         uds = (
@@ -78,8 +84,16 @@ class SentencePieceTokenizer:
         if self._sp is None:
             self.load()
         assert self._sp is not None
-        pre = self._e.preprocess_for_sentencepiece(text, self.mask)
+        pre = self._preprocess(text)
         return self._sp.encode(pre, out_type=str)
+
+    def _preprocess(self, text: str) -> str:
+        pre = self._e.preprocess_for_sentencepiece(text, self.mask)
+        if not self.stopwords:
+            return pre
+        toks = pre.split()
+        toks = [t for t in toks if t not in self.stopwords]
+        return " ".join(toks)
 
 
 class Vocabulary:
