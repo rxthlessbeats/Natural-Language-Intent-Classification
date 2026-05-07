@@ -1,0 +1,57 @@
+# Single experiment file — edit `train.recipe`: tfidf_lr | textcnn | charcnn
+preprocess:
+  train_json: train.json
+  test_json: test.json
+  intent_filter_shared_only: false
+  val_fraction: 0.2
+  split_seed: 42
+  lowercase: true
+  strip_whitespace: true
+  collapse_multiword: true
+  mask_entity_buckets:
+    - city
+    - airline
+    - airport-code
+    - airport-name
+    - state
+    - date
+    - time
+    - numeric
+  tfidf_use_masking: true
+  textcnn_use_masking: false
+  tokenizer: word # word | char | bpe (textcnn only; charcnn uses char)
+  bpe_vocab_size: 3000
+  bpe_model_type: bpe
+  bpe_character_coverage: 1.0
+  sentencepiece_hard_vocab_limit: false
+  max_len_word: 50
+  max_len_char: 200
+  tfidf_max_features: 8000
+  tfidf_ngram_min: 1
+  tfidf_ngram_max: 2
+  tfidf_sublinear_tf: true
+  tfidf_strip_accents: unicode
+  embedding_type: glove # learned | glove
+  glove_name: "6B"
+  glove_dim: 100
+  freeze_pretrained: false
+  embed_dim_learned: 128
+
+train:
+  recipe: textcnn
+  seed: 42
+  batch_size: 64
+  max_epochs: 100
+  early_stopping_patience: 10
+  lr: 0.003
+  weight_decay: 0.0001
+  lr_scheduler_patience: 4
+  lr_scheduler_factor: 0.5
+  lr_scheduler_min_lr: 0.000001
+  loss_type: focal # ce | focal
+  class_weight_mode: dampened_inv # inv | dampened_inv | null
+  focal_gamma: 2.0
+  textcnn_filter_sizes: null
+  textcnn_num_filters: null
+  textcnn_dropout: 0.5
+  run_name: null
