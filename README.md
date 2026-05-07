@@ -91,7 +91,3 @@ atis_intent_classification/
     train.py
     evaluate.py
 ```
-
-## Smoke test (quick)
-
-Temporarily set `train.max_epochs: 2` and `train.early_stopping_patience: 1` in `config.yaml`, run `python -m atis_intent train --config config.yaml`, then `python -m atis_intent evaluate --run-dir runs/...`.
