@@ -5,6 +5,7 @@ Reproducible training and evaluation for the ATIS intent dataset using **PyTorch
 Project notes:
 - **Pydantic** validates experiment configuration (`config.yaml`).
 - **pre-commit** runs formatting/lint checks locally.
+- Training progress bars use **tqdm**.
 
 Data exploration and visualization stays in `notebooks/deep_learning.ipynb`.
 
