@@ -140,6 +140,7 @@ class ExperimentConfig(BaseModel):
 
 
 def load_experiment_config(path: str | Path) -> ExperimentConfig:
+    """Load experiment YAML into a validated ExperimentConfig (or defaults)."""
     p = Path(path)
     if not p.is_file():
         return ExperimentConfig()
@@ -148,5 +149,6 @@ def load_experiment_config(path: str | Path) -> ExperimentConfig:
 
 
 def resolve_data_path(settings: Settings, rel: str) -> Path:
+    """Resolve a data path relative to Settings.data_dir."""
     p = Path(rel)
     return p if p.is_absolute() else (settings.data_dir / p).resolve()

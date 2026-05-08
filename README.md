@@ -1,11 +1,48 @@
 # ATIS intent classification
 
-Reproducible training and evaluation for the ATIS intent dataset using **PyTorch** and **scikit-learn** (no TensorFlow): TF‑IDF logistic regression, Kim-style **TextCNN** (word / char / SentencePiece BPE), and a **char-level CNN** recipe (TextCNN + character tokenizer). Data exploration stays in `notebooks/deep_learning.ipynb`.
+Reproducible training and evaluation for the ATIS intent dataset using **PyTorch** and **scikit-learn**: **TF‑IDF logistic regression**, **CNN** (word / char / SentencePiece BPE).
+
+Project notes:
+- **Pydantic** validates experiment configuration (`config.yaml`).
+- **pre-commit** runs formatting/lint checks locally.
+
+Data exploration and visualization stays in `notebooks/deep_learning.ipynb`.
 
 ## Requirements
 
 - Python 3.10+
 - CUDA optional (CPU works; set `ATIS_DEVICE=cpu` in `.env` if needed)
+
+## Project layout
+
+```
+atis_intent_classification/
+  config.yaml
+  pyproject.toml          # ruff & mypy only
+  requirements.txt
+  data/
+  runs/                   # training/eval outputs (gitignored)
+    <run_name>/
+      experiment.yaml
+      model.pt
+      bundle.pkl
+      metrics.json
+      evaluate_metrics.json
+      evaluate_confusion_matrix.json
+      evaluate_classification_report.txt
+      evaluate_classification_report.json
+  notebooks/deep_learning.ipynb   # exploration only
+  atis_intent/
+    __main__.py
+    cli.py
+    config.py
+    data.py
+    entities.py
+    tokenization.py
+    models.py
+    train.py
+    evaluate.py
+```
 
 ## Setup
 
@@ -29,6 +66,33 @@ Place RASA-format JSON under `data/` (default):
 - `data/test.json`
 
 Or set `ATIS_DATA_DIR` to the folder that contains those files.
+
+#### Data format (RASA NLU JSON)
+
+This project expects the **Rasa NLU** JSON structure with examples under `rasa_nlu_data.common_examples`.
+
+Minimal example:
+
+```json
+{
+  "rasa_nlu_data": {
+    "common_examples": [
+      {
+        "text": "show me flights from boston to denver",
+        "intent": "flight",
+        "entities": [
+          { "start": 20, "end": 26, "value": "boston", "entity": "city_name" },
+          { "start": 30, "end": 36, "value": "denver", "entity": "city_name" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Notes:
+- **`text`** and **`intent`** are required for training/evaluation.
+- **`entities`** are optional, but if present they’re used to build entity resources for masking/collapse.
 
 ## Configuration
 
@@ -69,25 +133,4 @@ Recomputes metrics on the test split from `bundle.pkl` / `experiment.yaml` and w
 ```bash
 pre-commit install
 pre-commit run --all-files
-```
-
-## Project layout
-
-```
-atis_intent_classification/
-  config.yaml
-  pyproject.toml          # ruff & mypy only
-  requirements.txt
-  data/
-  notebooks/deep_learning.ipynb   # exploration only
-  atis_intent/
-    __main__.py
-    cli.py
-    config.py
-    data.py
-    entities.py
-    tokenization.py
-    models.py
-    train.py
-    evaluate.py
 ```

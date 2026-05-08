@@ -27,6 +27,7 @@ def load_glove_vectors(
     dim: int = 100,
     cache: Path | None = None,
 ) -> SimpleNamespace:
+    """Load (or download+cache) GloVe vectors and return stoi+tensor."""
     cache = Path(cache or Path(".vector_cache").resolve())
     cache.mkdir(parents=True, exist_ok=True)
     if name not in _GLOVE_ZIP_URL:
@@ -72,6 +73,7 @@ def build_embedding(
     freeze: bool,
     cache: Path,
 ) -> nn.Embedding:
+    """Create an embedding layer (learned or GloVe-initialized) for a vocab."""
     n = len(vocab)
     emb = nn.Embedding(n, embed_dim, padding_idx=vocab.pad_id)
     if kind == "learned":
@@ -107,6 +109,7 @@ class TextCNN(nn.Module):
         num_filters: int = 128,
         dropout: float = 0.5,
     ):
+        """Initialize a Kim-style TextCNN classifier."""
         super().__init__()
         self.embedding = embedding
         embed_dim = embedding.embedding_dim
@@ -121,6 +124,7 @@ class TextCNN(nn.Module):
             nn.init.kaiming_uniform_(conv.weight, nonlinearity="relu")
 
     def forward(self, ids: torch.Tensor, lengths: torch.Tensor | None = None) -> torch.Tensor:
+        """Compute class logits from token id sequences."""
         x = self.embedding(ids).transpose(1, 2)
         pooled = [F.relu(conv(x)).max(dim=2).values for conv in self.convs]
         out = torch.cat(pooled, dim=1)
@@ -129,10 +133,12 @@ class TextCNN(nn.Module):
 
 class LogisticRegression(nn.Module):
     def __init__(self, in_features: int, num_classes: int):
+        """Initialize a single-layer linear classifier."""
         super().__init__()
         self.fc = nn.Linear(in_features, num_classes)
         nn.init.xavier_uniform_(self.fc.weight)
         nn.init.zeros_(self.fc.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute class logits from dense features."""
         return self.fc(x)

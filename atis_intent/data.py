@@ -13,6 +13,7 @@ from sklearn.preprocessing import LabelEncoder
 
 
 def load_rasa_json(path: Path) -> pd.DataFrame:
+    """Load Rasa NLU JSON as a (text, intent) dataframe."""
     data = json.loads(path.read_text(encoding="utf-8"))
     rows = []
     for ex in data["rasa_nlu_data"]["common_examples"]:
@@ -23,6 +24,7 @@ def load_rasa_json(path: Path) -> pd.DataFrame:
 def apply_intent_filter_shared_only(
     train_df: pd.DataFrame, test_df: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Keep only intents that appear in both train and test."""
     shared = set(train_df["intent"]) & set(test_df["intent"])
     tr = train_df[train_df["intent"].isin(shared)].reset_index(drop=True)
     te = test_df[test_df["intent"].isin(shared)].reset_index(drop=True)
@@ -30,6 +32,7 @@ def apply_intent_filter_shared_only(
 
 
 def fit_label_encoder(train_df: pd.DataFrame, test_df: pd.DataFrame) -> LabelEncoder:
+    """Fit a label encoder over all intents observed in train and test."""
     le = LabelEncoder()
     intents = np.sort(pd.unique(pd.concat([train_df["intent"], test_df["intent"]])))
     le.fit(intents)
@@ -42,6 +45,7 @@ def stratified_val_split(
     seed: int = 42,
     label_col: str = "label",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Create a stratified train/val split, preserving singletons in train."""
     single = df.groupby(label_col).filter(lambda g: len(g) == 1)
     multi = df.groupby(label_col).filter(lambda g: len(g) > 1)
     tr_m, va_m = train_test_split(
@@ -77,6 +81,7 @@ def prepare_frames(
     random_deletion: bool = False,
     random_deletion_p: float = 0.14,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, LabelEncoder, int]:
+    """Load train/test JSON, build labels, and return train/val/test frames."""
     train_df = load_rasa_json(train_path)
     test_df = load_rasa_json(test_path)
     if intent_filter_shared_only:

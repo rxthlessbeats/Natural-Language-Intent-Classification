@@ -36,6 +36,7 @@ from atis_intent.tokenization import (
 
 
 def _set_seed(seed: int) -> None:
+    """Seed Python, NumPy, and PyTorch RNGs for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -44,6 +45,7 @@ def _set_seed(seed: int) -> None:
 
 
 def _per_recipe_defaults(recipe: str, tokenizer: str) -> dict[str, Any]:
+    """Return per-recipe default CNN hyperparameters."""
     if recipe == "charcnn" or tokenizer == "char":
         return {"filter_sizes": (3, 5, 7), "num_filters": 256, "max_len": 200}
     return {"filter_sizes": (2, 3, 4, 5), "num_filters": 128, "max_len": 50}
@@ -51,11 +53,13 @@ def _per_recipe_defaults(recipe: str, tokenizer: str) -> dict[str, Any]:
 
 class FocalLoss(nn.Module):
     def __init__(self, gamma: float = 2.0, weight: torch.Tensor | None = None):
+        """Create a focal loss module (optionally class-weighted)."""
         super().__init__()
         self.gamma = gamma
         self.register_buffer("weight", weight)
 
     def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Compute focal loss from logits and integer targets."""
         logp = F.log_softmax(logits, dim=-1)
         p = logp.exp()
         logpt = logp.gather(1, target.unsqueeze(1)).squeeze(1)
@@ -69,6 +73,7 @@ class FocalLoss(nn.Module):
 def class_weights_from_labels(
     y: torch.Tensor, num_classes: int, mode: str | None
 ) -> torch.Tensor | None:
+    """Compute optional class weights from label counts."""
     if mode is None:
         return None
     counts = torch.bincount(y, minlength=num_classes).float()
@@ -91,6 +96,7 @@ def build_criterion(
     focal_gamma: float,
     device: torch.device,
 ) -> nn.Module:
+    """Build the configured loss function (CE or focal)."""
     if loss_type == "ce":
         w = class_weights.to(device) if class_weights is not None else None
         return nn.CrossEntropyLoss(weight=w)
@@ -102,17 +108,21 @@ def build_criterion(
 
 class TensorDatasetShuffled(Dataset):
     def __init__(self, X: torch.Tensor, y: torch.Tensor):
+        """Tensor dataset wrapper for dense features."""
         self.X = X
         self.y = y
 
     def __len__(self) -> int:
+        """Return dataset size."""
         return len(self.y)
 
     def __getitem__(self, i: int):
+        """Return (X_i, y_i)."""
         return self.X[i], self.y[i]
 
 
 def make_tensor_loader(X: torch.Tensor, y: torch.Tensor, batch: int, shuffle: bool) -> DataLoader:
+    """Create a DataLoader for dense tensors."""
     ds = TensorDatasetShuffled(X, y)
     return DataLoader(ds, batch_size=batch, shuffle=shuffle)
 
@@ -121,6 +131,7 @@ class SeqDataset(Dataset):
     def __init__(
         self, texts: pd.Series, labels: np.ndarray, tokenize_fn, vocab: Vocabulary, max_len: int
     ):
+        """Sequence dataset returning (token_ids, length, label)."""
         self.texts = texts.tolist()
         self.labels = labels
         self.tokenize_fn = tokenize_fn
@@ -128,15 +139,18 @@ class SeqDataset(Dataset):
         self.max_len = max_len
 
     def __len__(self) -> int:
+        """Return dataset size."""
         return len(self.labels)
 
     def __getitem__(self, i: int):
+        """Tokenize+encode example i into ids/length/label."""
         toks = self.tokenize_fn(self.texts[i])[: self.max_len]
         ids = [self.vocab.stoi.get(t, self.vocab.unk_id) for t in toks]
         return torch.tensor(ids, dtype=torch.long), len(ids), int(self.labels[i])
 
 
 def collate_pad(batch, pad_id: int, min_len: int = 1):
+    """Pad a batch to a common length (>= min_len) for Conv1d."""
     labels = torch.tensor([b[2] for b in batch], dtype=torch.long)
     lens = [max(b[1], min_len) for b in batch]
     max_l = min(max(len(b[0]) for b in batch), max(lens) if lens else 1)
@@ -157,6 +171,7 @@ def make_seq_loader(
     batch: int,
     shuffle: bool,
 ) -> DataLoader:
+    """Create a DataLoader for padded token id sequences."""
     ds = SeqDataset(df["text"], df["label"].values, tokenize_fn, vocab, max_len)
     return DataLoader(
         ds,
@@ -186,6 +201,7 @@ def train_dense(
     batch_size: int,
     name: str = "tfidf_lr",
 ) -> tuple[nn.Module, list[dict], float, float, float, np.ndarray]:
+    """Train a dense (TF-IDF) classifier with early stopping on val macro-F1."""
     model = model.to(device)
     optimiser = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ReduceLROnPlateau(
@@ -316,6 +332,7 @@ def train_seq(
     criterion: nn.Module,
     y_te: np.ndarray,
 ) -> tuple[nn.Module, list[dict], float, float, float, np.ndarray]:
+    """Train a sequence model with early stopping on val macro-F1."""
     model = model.to(device)
     optimiser = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = ReduceLROnPlateau(
@@ -432,6 +449,7 @@ def train_seq(
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI entrypoint: train a configured model and write a run bundle."""
     parser = argparse.ArgumentParser(description="Train ATIS intent model")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to experiment YAML")
     args = parser.parse_args(argv)

@@ -7,6 +7,7 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Dispatch to the train/evaluate subcommands."""
     parser = argparse.ArgumentParser(
         prog="atis_intent",
         description="ATIS intent classification — train and evaluate",

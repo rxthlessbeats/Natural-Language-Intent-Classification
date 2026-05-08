@@ -11,11 +11,13 @@ from atis_intent.entities import EntityResources
 
 class WordTokenizer:
     def __init__(self, entities: EntityResources, mask: bool, stopwords: set[str] | None = None):
+        """Create a word tokenizer with optional masking/stopword removal."""
         self._e = entities
         self.mask = mask
         self.stopwords = stopwords
 
     def tokenize(self, text: str) -> list[str]:
+        """Tokenize a text string into word-level tokens."""
         toks = self._e.word_full_tokenize(text, apply_mask=self.mask)
         if not self.stopwords:
             return toks
@@ -24,6 +26,7 @@ class WordTokenizer:
 
 class CharTokenizer:
     def tokenize(self, text: str) -> list[str]:
+        """Tokenize a text string into character tokens."""
         return list(text.lower())
 
 
@@ -35,6 +38,7 @@ class SentencePieceTokenizer:
         mask: bool,
         stopwords: set[str] | None = None,
     ):
+        """Create a SentencePiece tokenizer wrapper (train/load/tokenize)."""
         self.model_path = model_path
         self._e = entities
         self.mask = mask
@@ -50,6 +54,7 @@ class SentencePieceTokenizer:
         hard_vocab_limit: bool = False,
         user_defined_symbols: list[str] | None = None,
     ) -> SentencePieceTokenizer:
+        """Train a SentencePiece model on a corpus and load it."""
         from atis_intent.entities import SENTENCEPIECE_USER_DEFINED_SYMBOLS
 
         self.model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,10 +82,12 @@ class SentencePieceTokenizer:
         return self.load()
 
     def load(self) -> SentencePieceTokenizer:
+        """Load the SentencePiece model from disk."""
         self._sp = spm.SentencePieceProcessor(model_file=str(self.model_path))
         return self
 
     def tokenize(self, text: str) -> list[str]:
+        """Tokenize a text string into SentencePiece subword tokens."""
         if self._sp is None:
             self.load()
         assert self._sp is not None
@@ -88,6 +95,7 @@ class SentencePieceTokenizer:
         return self._sp.encode(pre, out_type=str)
 
     def _preprocess(self, text: str) -> str:
+        """Preprocess text for SentencePiece (masking + optional stopwords)."""
         pre = self._e.preprocess_for_sentencepiece(text, self.mask)
         if not self.stopwords:
             return pre
@@ -100,10 +108,12 @@ class Vocabulary:
     PAD, UNK = "<pad>", "<unk>"
 
     def __init__(self):
+        """Create an empty vocabulary with PAD/UNK specials."""
         self.itos: list[str] = []
         self.stoi: dict[str, int] = {}
 
     def build(self, token_lists: list[list[str]], min_freq: int = 1) -> Vocabulary:
+        """Build vocab mappings from a tokenized corpus."""
         from collections import Counter
 
         ctr: Counter[str] = Counter()
@@ -116,6 +126,7 @@ class Vocabulary:
         return self
 
     def __len__(self) -> int:
+        """Return vocabulary size."""
         return len(self.itos)
 
     @property

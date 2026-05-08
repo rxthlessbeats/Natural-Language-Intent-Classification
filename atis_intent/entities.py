@@ -31,6 +31,7 @@ SENTENCEPIECE_USER_DEFINED_SYMBOLS = list(_MASK_TOKEN.values())
 
 
 def collect_entity_values(json_path: Path) -> dict[str, set]:
+    """Collect entity values by entity name from a Rasa NLU JSON file."""
     raw = json.loads(json_path.read_text(encoding="utf-8"))
     out: dict[str, set] = defaultdict(set)
     for ex in raw["rasa_nlu_data"]["common_examples"]:
@@ -40,6 +41,7 @@ def collect_entity_values(json_path: Path) -> dict[str, set]:
 
 
 def gather(ent2vals: dict, suffix: str) -> set:
+    """Union entity values whose key matches or ends with the given suffix."""
     bag: set = set()
     for k, v in ent2vals.items():
         if k == suffix or k.endswith("." + suffix):
