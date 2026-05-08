@@ -2,7 +2,7 @@
 preprocess:
   train_json: train.json
   test_json: test.json
-  intent_filter_shared_only: false
+  intent_filter_shared_only: true
   val_fraction: 0.2
   split_seed: 42
   lowercase: true
@@ -19,7 +19,7 @@ preprocess:
     - numeric
   tfidf_use_masking: true
   textcnn_use_masking: true
-  tokenizer: bpe # word | char | bpe (textcnn only; charcnn uses char)
+  tokenizer: word # word | char | bpe (textcnn only; charcnn uses char)
   bpe_vocab_size: 3000
   bpe_model_type: bpe
   bpe_character_coverage: 1.0
@@ -39,21 +39,21 @@ preprocess:
   freeze_pretrained: false
   embed_dim_learned: 128
   # Token-level random deletion on train only (after split); concat noisy copy.
-  random_deletion: true
-  random_deletion_p: 0.1 # must be < 0.15
+  random_deletion: false
+  random_deletion_p: 0.14 # must be < 0.15
 
 train:
-  recipe: tfidf_lr # tfidf_lr | textcnn | charcnn
+  recipe: textcnn # tfidf_lr | textcnn | charcnn
   seed: 42
   batch_size: 64
   max_epochs: 100
   early_stopping_patience: 30
   lr: 1e-3
-  weight_decay: 1e-5
+  weight_decay: 1e-3
   lr_scheduler_patience: 10
   lr_scheduler_factor: 0.5
   lr_scheduler_min_lr: 1e-6
-  loss_type: focal # ce | focal
+  loss_type: ce # ce | focal
   class_weight_mode: inv # inv | dampened_inv | null
   focal_gamma: 2.0
   textcnn_filter_sizes: null

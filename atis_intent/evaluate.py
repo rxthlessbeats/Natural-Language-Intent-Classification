@@ -6,11 +6,12 @@ import argparse
 import json
 import pickle
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
 from atis_intent.config import Settings, load_experiment_config, resolve_data_path
 from atis_intent.data import load_rasa_json
@@ -22,6 +23,19 @@ from atis_intent.tokenization import (
     Vocabulary,
     WordTokenizer,
 )
+
+
+def _json_ready(obj: Any) -> Any:
+    """Convert numpy scalars / nested structures for json.dump."""
+    if isinstance(obj, dict):
+        return {str(k): _json_ready(v) for k, v in obj.items()}
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        return [_json_ready(x) for x in obj]
+    if isinstance(obj, np.integer) or isinstance(obj, np.floating):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -143,14 +157,50 @@ def main(argv: list[str] | None = None) -> None:
     mf1 = f1_score(y_true, pred, average="macro", zero_division=0)
     wf1 = f1_score(y_true, pred, average="weighted", zero_division=0)
     print(f"test_accuracy={acc:.4f}  macro_f1={mf1:.4f}  weighted_f1={wf1:.4f}")
-    print(classification_report(y_true, pred, target_names=le_classes, zero_division=0))
 
-    out = run_dir / "evaluate_metrics.json"
-    out.write_text(
-        json.dumps({"test_accuracy": acc, "test_macro_f1": mf1, "test_weighted_f1": wf1}, indent=2),
-        encoding="utf-8",
+    labels_all = list(range(len(le_classes)))
+    report_text = classification_report(
+        y_true,
+        pred,
+        labels=labels_all,
+        target_names=le_classes,
+        zero_division=0,
     )
-    print(f"Wrote {out}")
+    print(report_text)
+
+    report_dict = classification_report(
+        y_true,
+        pred,
+        labels=labels_all,
+        target_names=le_classes,
+        zero_division=0,
+        output_dict=True,
+    )
+    cm = confusion_matrix(y_true, pred, labels=labels_all)
+
+    metrics_payload = {
+        "test_accuracy": float(acc),
+        "test_macro_f1": float(mf1),
+        "test_weighted_f1": float(wf1),
+    }
+    out = run_dir / "evaluate_metrics.json"
+    out.write_text(json.dumps(metrics_payload, indent=2), encoding="utf-8")
+
+    cm_path = run_dir / "evaluate_confusion_matrix.json"
+    cm_payload = {
+        "label_ids": labels_all,
+        "label_names": list(le_classes),
+        "matrix": cm.tolist(),
+    }
+    cm_path.write_text(json.dumps(cm_payload, indent=2), encoding="utf-8")
+
+    report_txt_path = run_dir / "evaluate_classification_report.txt"
+    report_txt_path.write_text(report_text, encoding="utf-8")
+
+    report_json_path = run_dir / "evaluate_classification_report.json"
+    report_json_path.write_text(json.dumps(_json_ready(report_dict), indent=2), encoding="utf-8")
+
+    print(f"Wrote {out}, {cm_path}, {report_txt_path}, {report_json_path}")
 
 
 if __name__ == "__main__":
